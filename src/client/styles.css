@@ -408,12 +408,6 @@ legend {
   color: inherit;
 }
 
-.safeguarding {
-  background: var(--card);
-  border: 2px solid var(--navy);
-  border-radius: var(--radius);
-  padding: 1rem;
-}
 
 .errors:not(:empty) {
   background: var(--bad-bg);

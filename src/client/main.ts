@@ -207,7 +207,6 @@ async function renderScreen(): Promise<void> {
     screenSlot.replaceChildren(
       recordScreen({
         session,
-        dslPhone: state.me.dsl_phone,
         rejection: await rejectionFor(session.client_uuid),
         saveDraft: (draft) => void saveDraft(session.client_uuid, draft),
         submit: async (body) => {

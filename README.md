@@ -28,7 +28,8 @@ The *why* is in `07_Operations_Brand/Placement_Portal_Spec.md` and the *what* in
 
 ## Working on it
 
-Everything runs on the server as `portal` (`ssh portal@185.32.72.150`). Node 22 is in `~/.local/opt/node/bin`.
+Everything runs on the server as `portal` (`ssh portal@185.32.72.150`), in the `~/dev` checkout. Node 22 is in
+`~/.local/opt/node/bin`.
 
 ```bash
 npm install
@@ -56,6 +57,16 @@ npm run cli -- retention-due    # pupils past their 25th birthday, due a retenti
 Adding someone takes two steps: add them here **and** to the Cloudflare Access policy. Removing someone likewise takes both.
 
 ## Deploying
+
+There are two checkouts on the server:
+
+- **`~/dev`** is where the work happens. Run the tests, builds and dev server here, then push to GitHub.
+- **`/srv/portal/app`** is the live copy. Never edit or build it by hand, because the live service serves its `dist/`.
+
+To release, run `/srv/portal/app/scripts/deploy.sh` as `portal`. It fast-forwards to `origin/main`, runs the tests, builds,
+restarts the service, and checks health. If the tests fail, the live service is left untouched. The restart works
+through a single sudoers rule (`/etc/sudoers.d/portal-restart`), which allows exactly
+`systemctl restart portal.service`.
 
 `deploy/` holds the systemd units, the backup timer and the cloudflared config. The one-off root setup is in
 `deploy/SETUP.md`.

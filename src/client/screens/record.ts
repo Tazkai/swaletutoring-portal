@@ -6,11 +6,10 @@ import {
 } from '../../shared/types';
 import type { Delivery } from '../queue';
 import { clockTime, localDate, type LocalSession } from '../sessions';
-import { h, telHref } from '../ui';
+import { h } from '../ui';
 
 export interface RecordContext {
   session: LocalSession;
-  dslPhone: string | undefined;
   saveDraft: (draft: Partial<LessonRecordBody>) => void;
   submit: (body: LessonRecordBody) => Promise<Delivery>;
   rejection: string | undefined;
@@ -216,15 +215,6 @@ export function recordScreen(ctx: RecordContext): HTMLElement {
       (Object.keys(ATTENDANCE_LABELS) as AttendedStatus[]).map((k) =>
         radio('attendance_status', k, ATTENDANCE_LABELS[k], (d.attendance_status ?? 'present') === k),
       ),
-    ),
-
-    h(
-      'aside',
-      { class: 'safeguarding' },
-      h('strong', {}, 'Safeguarding concern? '),
-      'Don’t write it in this form. Phone the DSL now.',
-      ctx.dslPhone &&
-        h('a', { class: 'btn btn-call', href: telHref(ctx.dslPhone) }, `Call the DSL · ${ctx.dslPhone}`),
     ),
 
     errors,
