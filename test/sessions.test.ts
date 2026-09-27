@@ -427,6 +427,20 @@ describe('sessions, pupils and access rules', () => {
       assert.equal(count('SELECT COUNT(*) FROM sessions WHERE pupil_id = ?', h.pupils.b1), before);
     });
 
+    test('done_today: set by a record dated today, not by one logged ahead', async () => {
+      const doneFor = async (pupil: number) =>
+        (await call(DSL, 'GET', '/api/pupils')).json().find((p: { id: number }) => p.id === pupil).done_today;
+      assert.equal(await doneFor(h.pupils.b1), 0);
+      const nextWeek = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+      await absent(DSL, h.pupils.b1, { attendance_status: 'cancelled_us', session_date: nextWeek });
+      assert.equal(await doneFor(h.pupils.b1), 0);
+      await absent(DSL, h.pupils.b1, { attendance_status: 'cancelled_us' });
+      assert.equal(await doneFor(h.pupils.b1), 1);
+      // Per tutor: Tutor B's list is not affected by the DSL's records.
+      const forB = (await call(B, 'GET', '/api/pupils')).json()[0];
+      assert.equal(forB.id, h.pupils.b1);
+    });
+
     test('non-attendance is audited', async () => {
       const uuid = randomUUID();
       await absent(A, h.pupils.a1, { attendance_status: 'cancelled_school', reported_by: 'School office' }, uuid);

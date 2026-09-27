@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { isOversight } from '../auth.js';
-import { assertPupilVisible } from '../access.js';
+import { assertPupilVisible, londonDate } from '../access.js';
 import type { DB } from '../db.js';
 
 // Path params arrive as strings and type coercion is off (see app.ts).
@@ -16,15 +16,20 @@ export function pupilRoutes(app: FastifyInstance, db: DB): void {
       WHERE s.pupil_id = p.id AND s.tutor_id = @me AND s.venue IS NOT NULL
       ORDER BY s.started_at DESC LIMIT 1) AS last_venue`;
 
+  // Whether this tutor has a finished record (lesson or non-attendance) for today, UK time.
+  const doneToday = `EXISTS (SELECT 1 FROM sessions s
+      WHERE s.pupil_id = p.id AND s.tutor_id = @me AND s.submitted_at IS NOT NULL
+        AND s.session_date = @today) AS done_today`;
+
   const tutorPupils = db.prepare(
-    `SELECT p.id, p.reference, p.first_name, p.last_name, ${lastVenue}
+    `SELECT p.id, p.reference, p.first_name, p.last_name, ${lastVenue}, ${doneToday}
      FROM pupils p
      JOIN pupil_tutors pt ON pt.pupil_id = p.id AND pt.user_id = @me AND pt.active = 1
      WHERE p.status = 'active'
      ORDER BY p.first_name, p.last_name`,
   );
   const allPupils = db.prepare(
-    `SELECT p.id, p.reference, p.first_name, p.last_name, ${lastVenue}
+    `SELECT p.id, p.reference, p.first_name, p.last_name, ${lastVenue}, ${doneToday}
      FROM pupils p
      WHERE p.status = 'active'
      ORDER BY p.first_name, p.last_name`,
@@ -32,7 +37,8 @@ export function pupilRoutes(app: FastifyInstance, db: DB): void {
 
   app.get('/api/pupils', async (request) => {
     const me = request.user;
-    return (isOversight(me) ? allPupils : tutorPupils).all({ me: me.id });
+    const today = londonDate(new Date().toISOString());
+    return (isOversight(me) ? allPupils : tutorPupils).all({ me: me.id, today });
   });
 
   app.get<{ Params: { id: string } }>(

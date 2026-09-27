@@ -247,6 +247,7 @@ async function renderScreen(): Promise<void> {
       openAbsence: (pupilId, uuid) => {
         location.hash = uuid ? `#/absent/${pupilId}/${uuid}` : `#/absent/${pupilId}`;
       },
+      refresh: () => void renderScreen(),
     }),
   );
 }

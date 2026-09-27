@@ -164,7 +164,7 @@ export function absenceScreen(ctx: AbsenceContext): HTMLElement {
 }
 
 function resultPanel(delivery: Delivery, status: NonAttendanceStatus, ctx: AbsenceContext): HTMLElement {
-  const back = h('button', { class: 'btn btn-primary', type: 'button', onclick: ctx.done }, 'Back to today');
+  const back = h('button', { class: 'btn btn-primary', type: 'button', onclick: ctx.done }, 'Back to my pupils');
   const panel =
     delivery === 'sent'
       ? h(

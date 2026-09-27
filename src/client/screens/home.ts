@@ -18,6 +18,7 @@ export interface HomeContext {
   endSession: (session: LocalSession) => Promise<void>;
   openRecord: (clientUuid: string) => void;
   openAbsence: (pupilId: number, openSessionUuid?: string) => void;
+  refresh: () => void;
 }
 
 // Which pupil card has its "start" panel open. Survives re-renders.
@@ -29,14 +30,44 @@ export function deliveryChip(d: Delivery | undefined): HTMLElement {
   return h('span', { class: 'chip chip-ok' }, '✓ Sent');
 }
 
+// The day a record belongs to: a cancellation can be logged for another day.
+function recordDay(s: LocalSession): string {
+  return s.absence && s.session_date ? s.session_date : localDate(s.started_at);
+}
+
+function recordLabel(s: LocalSession): string {
+  return s.absence
+    ? NON_ATTENDANCE_LABELS[s.absence]
+    : `Lesson ${clockTime(s.started_at)}–${clockTime(s.ended_at)}`;
+}
+
+function ukDate(day: string): string {
+  return new Date(`${day}T12:00`).toLocaleDateString('en-GB');
+}
+
 export function homeScreen(ctx: HomeContext): HTMLElement {
   const today = localDate(new Date().toISOString());
   const active = ctx.sessions.filter((s) => s.stage !== 'submitted');
   const busyPupils = new Set(active.map((s) => s.pupil_id));
-  // Anything not yet confirmed stays on screen whatever day it's from.
-  const done = ctx.sessions
-    .filter((s) => s.stage === 'submitted')
-    .filter((s) => localDate(s.started_at) === today || ctx.delivery.get(s.client_uuid) !== 'sent')
+  const submitted = ctx.sessions.filter((s) => s.stage === 'submitted');
+
+  const todaysRecords = new Map<number, LocalSession[]>();
+  for (const s of submitted) {
+    if (recordDay(s) !== today) continue;
+    todaysRecords.set(s.pupil_id, [...(todaysRecords.get(s.pupil_id) ?? []), s]);
+  }
+  // Done today = recorded on this phone today, or the server says so (unless we're
+  // offline on yesterday's saved list, when its flag may be stale).
+  const isDone = (p: PupilSummary) =>
+    todaysRecords.has(p.id) || (!ctx.showingSavedList && p.done_today === 1);
+  const available = ctx.pupils.filter((p) => !busyPupils.has(p.id));
+  const toSee = available.filter((p) => !isDone(p));
+  const doneToday = available.filter(isDone);
+
+  // Other days: anything not yet confirmed as sent, and cancellations logged ahead.
+  const otherRecords = submitted
+    .filter((s) => recordDay(s) !== today)
+    .filter((s) => ctx.delivery.get(s.client_uuid) !== 'sent' || recordDay(s) > today)
     .reverse();
 
   return h(
@@ -58,41 +89,76 @@ export function homeScreen(ctx: HomeContext): HTMLElement {
         h('p', { class: 'note' }, 'No signal: showing the list saved on this phone.'),
       ctx.pupils.length === 0 &&
         h('p', { class: 'note' }, 'No pupils are linked to you yet. The office sets this up.'),
-      ctx.pupils
-        .filter((p) => !busyPupils.has(p.id))
-        .map((p) => pupilCard(p, ctx)),
+      ctx.pupils.length > 0 &&
+        toSee.length === 0 &&
+        active.length === 0 &&
+        h('p', { class: 'note' }, 'Everyone has a record for today.'),
+      toSee.map((p) => pupilCard(p, ctx)),
     ),
 
-    done.length > 0 &&
+    doneToday.length > 0 &&
       h(
         'section',
-        { 'aria-labelledby': 'done' },
-        h('h2', { id: 'done' }, 'Records'),
+        { 'aria-labelledby': 'done-today' },
+        h('h2', { id: 'done-today' }, 'Done today'),
+        doneToday.map((p) => doneCard(p, todaysRecords.get(p.id) ?? [], ctx)),
+      ),
+
+    otherRecords.length > 0 &&
+      h(
+        'section',
+        { 'aria-labelledby': 'other' },
+        h('h2', { id: 'other' }, 'Other days'),
         h(
           'ul',
           { class: 'done-list' },
-          done.map((s) =>
+          otherRecords.map((s) =>
             h(
               'li',
               {},
-              h(
-                'span',
-                {},
-                h('strong', {}, s.pupil_name),
-                s.absence
-                  ? ` ${NON_ATTENDANCE_LABELS[s.absence]}`
-                  : ` ${clockTime(s.started_at)}–${clockTime(s.ended_at)}`,
-                s.absence && s.session_date && s.session_date !== today
-                  ? ` (${new Date(`${s.session_date}T12:00`).toLocaleDateString('en-GB')})`
-                  : !s.absence &&
-                      localDate(s.started_at) !== today &&
-                      ` (${new Date(s.started_at).toLocaleDateString('en-GB')})`,
-              ),
+              h('span', {}, h('strong', {}, s.pupil_name), ` ${recordLabel(s)} (${ukDate(recordDay(s))})`),
               deliveryChip(ctx.delivery.get(s.client_uuid)),
             ),
           ),
         ),
       ),
+  );
+}
+
+function doneCard(p: PupilSummary, records: LocalSession[], ctx: HomeContext): HTMLElement {
+  return h(
+    'article',
+    { class: 'card card-done' },
+    h('h3', {}, `${p.first_name} ${p.last_name} `, h('span', { class: 'chip chip-ok' }, '✓ Done today')),
+    records.length > 0 &&
+      h(
+        'ul',
+        { class: 'record-lines' },
+        records.map((s) =>
+          h('li', {}, h('span', {}, recordLabel(s)), deliveryChip(ctx.delivery.get(s.client_uuid))),
+        ),
+      ),
+    h(
+      'div',
+      { class: 'card-actions' },
+      h(
+        'button',
+        {
+          class: 'btn btn-quiet btn-compact',
+          type: 'button',
+          onclick: (e: Event) => {
+            expandedPupil = p.id;
+            (e.currentTarget as HTMLElement).closest('article')?.replaceWith(pupilCard(p, ctx));
+          },
+        },
+        'Another session',
+      ),
+      h(
+        'button',
+        { class: 'btn btn-quiet btn-compact', type: 'button', onclick: () => ctx.openAbsence(p.id) },
+        "Didn't attend",
+      ),
+    ),
   );
 }
 
@@ -212,9 +278,9 @@ function pupilCard(p: PupilSummary, ctx: HomeContext): HTMLElement {
       {
         class: 'btn btn-quiet',
         type: 'button',
-        onclick: (e: Event) => {
+        onclick: () => {
           expandedPupil = null;
-          (e.currentTarget as HTMLElement).closest('article')?.replaceWith(pupilCard(p, ctx));
+          ctx.refresh();
         },
       },
       'Cancel',

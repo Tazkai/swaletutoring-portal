@@ -307,7 +307,7 @@ export function recordScreen(ctx: RecordContext): HTMLElement {
 }
 
 function resultPanel(delivery: Delivery, ctx: RecordContext): HTMLElement {
-  const back = h('button', { class: 'btn btn-primary', type: 'button', onclick: ctx.done }, 'Back to today');
+  const back = h('button', { class: 'btn btn-primary', type: 'button', onclick: ctx.done }, 'Back to my pupils');
   if (delivery === 'sent') {
     return h(
       'section',

@@ -58,6 +58,7 @@ export interface PupilSummary {
   first_name: string;
   last_name: string;
   last_venue: Venue | null;
+  done_today: 0 | 1;
 }
 
 export interface StartSessionBody {
