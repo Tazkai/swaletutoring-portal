@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+*.db
+*.db-wal
+*.db-shm
+# Runtime data lives outside the repo (/srv/portal/data, files, backup).
+# These entries are a second guard in case someone points a path inside it.
+data/
+files/
+backup/

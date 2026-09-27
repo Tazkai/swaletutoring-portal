@@ -1,0 +1,10 @@
+# /etc/systemd/system/portal-backup.service
+[Unit]
+Description=Swale Placement Portal: consistent SQLite snapshot
+
+[Service]
+Type=oneshot
+User=portal
+Group=portal
+EnvironmentFile=/srv/portal/app/.env
+ExecStart=/srv/portal/app/scripts/backup-db.sh

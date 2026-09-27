@@ -1,0 +1,34 @@
+# /etc/systemd/system/portal.service
+[Unit]
+Description=Swale Placement Portal
+After=network.target
+
+[Service]
+Type=simple
+User=portal
+Group=portal
+WorkingDirectory=/srv/portal/app
+Environment=NODE_ENV=production
+EnvironmentFile=/srv/portal/app/.env
+# Node 22 is installed for the portal user only; the system Node (18) is left alone.
+ExecStart=/srv/portal/.local/opt/node/bin/node dist/server/index.js
+Restart=always
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/portal/data /srv/portal/files /srv/portal/backup
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,441 @@
+/* Mobile first, one-handed, high contrast. Sizes in rem so the phone's text-size setting applies. */
+
+:root {
+  --navy: #0b1c40;
+  --navy-soft: #243866;
+  --orange: #fb7300;
+  --orange-soft: #fff1e5;
+  --ink: #0b1c40;
+  --muted: #4a5875;
+  --line: #c9d0de;
+  --bg: #f4f6fa;
+  --card: #ffffff;
+  --ok: #0d6b3a;
+  --ok-bg: #e3f4ea;
+  --warn: #7a3d00;
+  --warn-bg: #fff1e0;
+  --bad: #9b1c1c;
+  --bad-bg: #fde8e8;
+  --radius: 0.75rem;
+  --tap: 3.25rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 1.0625rem/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+#app {
+  max-width: 40rem;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: calc(0.75rem + env(safe-area-inset-top)) 1rem 0.75rem;
+  background: var(--navy);
+  color: #fff;
+}
+.topbar img {
+  border-radius: 0.5rem;
+}
+.topbar h1 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.status-slot:not(:empty) {
+  padding: 0.75rem 1rem 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.screen {
+  padding: 1rem;
+}
+
+h2 {
+  font-size: 1.15rem;
+  margin: 1.25rem 0 0.75rem;
+}
+section:first-child > h2,
+.record-head h2 {
+  margin-top: 0.25rem;
+}
+h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.2rem;
+}
+
+.note,
+.hint,
+.meta {
+  color: var(--muted);
+  margin: 0.25rem 0 0.75rem;
+}
+.hint {
+  font-size: 0.95rem;
+  margin-top: 0;
+}
+
+/* ---------- cards ---------- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.card-active {
+  border: 2px solid var(--orange);
+  background: var(--orange-soft);
+}
+.card-open {
+  border: 2px solid var(--navy);
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--radius);
+  border: 2px solid transparent;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  width: 100%;
+}
+.btn:focus-visible,
+.choice input:focus-visible + span,
+textarea:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+.callbar:focus-visible {
+  outline: 3px solid var(--orange);
+  outline-offset: 2px;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* Navy text on orange: 6.6:1. White on this orange would fail contrast. */
+.btn-primary {
+  background: var(--orange);
+  color: var(--navy);
+}
+.btn-quiet {
+  background: transparent;
+  color: var(--navy);
+  border-color: var(--line);
+}
+.btn-small {
+  min-height: 2.5rem;
+  width: auto;
+  padding: 0.25rem 0.9rem;
+  background: var(--navy);
+  color: #fff;
+  margin-top: 0.4rem;
+}
+.btn-call {
+  background: var(--navy);
+  color: #fff;
+  margin-top: 0.6rem;
+}
+.btn-submit {
+  margin-top: 1rem;
+  font-size: 1.15rem;
+}
+
+/* ---------- chips and banners ---------- */
+
+.chip {
+  display: inline-block;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.chip-ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.chip-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.chip-bad {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+
+.banner {
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  border-left: 6px solid;
+}
+.banner-warn {
+  background: var(--warn-bg);
+  border-color: var(--orange);
+  color: var(--warn);
+}
+.banner-bad {
+  background: var(--bad-bg);
+  border-color: var(--bad);
+  color: var(--bad);
+  margin-bottom: 1rem;
+}
+
+.done-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.done-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+.done-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- form ---------- */
+
+.field {
+  margin-bottom: 1.25rem;
+}
+label,
+legend {
+  font-weight: 700;
+}
+.field > label {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+textarea {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  padding: 0.7rem 0.8rem;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  resize: vertical;
+}
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 1.25rem;
+  min-width: 0;
+}
+legend {
+  padding: 0;
+  margin-bottom: 0.5rem;
+}
+
+.choices {
+  display: grid;
+  gap: 0.5rem;
+}
+.choices legend {
+  grid-column: 1 / -1;
+}
+.choices-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.choices-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.choice {
+  position: relative;
+  display: block;
+}
+.choice input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+}
+.choice span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: var(--tap);
+  padding: 0.4rem 0.5rem;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.choice input:checked + span {
+  border-color: var(--navy);
+  background: var(--navy);
+  color: #fff;
+}
+.choice-eng span {
+  min-height: 4.25rem;
+  flex-direction: column;
+  font-size: 0.95rem;
+}
+.choice-eng b {
+  font-size: 1.5rem;
+}
+
+.check {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 0.6rem;
+  min-height: var(--tap);
+}
+.check input {
+  width: 1.5rem;
+  height: 1.5rem;
+  accent-color: var(--navy);
+}
+
+.more {
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0 1rem;
+  margin-bottom: 1.25rem;
+  background: #fff;
+}
+.more summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  cursor: pointer;
+}
+.more[open] {
+  padding-bottom: 0.25rem;
+}
+
+.times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+.times legend {
+  grid-column: 1 / -1;
+}
+.times label {
+  display: grid;
+  gap: 0.25rem;
+}
+.times input {
+  font: inherit;
+  min-height: var(--tap);
+  padding: 0.3rem 0.6rem;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: inherit;
+}
+
+.safeguarding {
+  background: var(--card);
+  border: 2px solid var(--navy);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.errors:not(:empty) {
+  background: var(--bad-bg);
+  color: var(--bad);
+  border-radius: var(--radius);
+  padding: 0.5rem 1rem;
+  margin-top: 1rem;
+  font-weight: 700;
+}
+.errors p {
+  margin: 0.4rem 0;
+}
+
+/* ---------- result ---------- */
+
+.result {
+  border-radius: var(--radius);
+  padding: 1.5rem 1rem;
+  text-align: center;
+  display: grid;
+  gap: 0.5rem;
+}
+.result h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+.result-ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.result-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border: 3px solid var(--orange);
+}
+.result-bad {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.result-mark {
+  font-size: 3rem;
+  margin: 0;
+  line-height: 1;
+}
+
+/* ---------- DSL call bar: always visible ---------- */
+
+.callbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom));
+  background: var(--navy);
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.95rem;
+  box-shadow: 0 -2px 8px rgb(0 0 0 / 0.15);
+}
+.callbar strong {
+  font-size: 1.1rem;
+  color: #ffd2ad;
+}

@@ -1,0 +1,8 @@
+# /etc/cloudflared/config.yml
+# Outbound tunnel only: no inbound port is opened for the portal.
+tunnel: <tunnel-id>
+credentials-file: /etc/cloudflared/<tunnel-id>.json
+ingress:
+  - hostname: portal.swaletutoring.co.uk
+    service: http://127.0.0.1:3100
+  - service: http_status:404

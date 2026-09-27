@@ -1,0 +1,11 @@
+# /etc/systemd/system/portal-backup.timer
+# 02:45 UTC, ahead of the 03:00 UTC restic → Umbrel run.
+[Unit]
+Description=Nightly Placement Portal DB snapshot
+
+[Timer]
+OnCalendar=*-*-* 02:45:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

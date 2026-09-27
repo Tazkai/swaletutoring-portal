@@ -1,0 +1,33 @@
+{
+  "name": "swaletutoring-portal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Swale Tutoring Service Placement Portal: lesson records, attendance, training library",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start": "node dist/server/index.js",
+    "dev": "tsx watch src/server/index.ts",
+    "cli": "tsx src/server/cli.ts",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.sw.json --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@fastify/static": "^8.2.0",
+    "better-sqlite3": "^12.2.0",
+    "fastify": "^5.4.0",
+    "jose": "^6.0.12"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.16.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.4"
+  }
+}
