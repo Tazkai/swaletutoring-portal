@@ -24,6 +24,11 @@
   box-sizing: border-box;
 }
 
+/* `hidden` must win over any display rule below. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
@@ -326,25 +331,62 @@ legend {
   accent-color: var(--navy);
 }
 
-.more {
+.field input[type='text'],
+.field input[type='date'],
+.field input[type='datetime-local'] {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  min-height: var(--tap);
+  padding: 0.5rem 0.8rem;
   border: 2px solid var(--line);
   border-radius: var(--radius);
-  padding: 0 1rem;
-  margin-bottom: 1.25rem;
   background: #fff;
 }
-.more summary {
-  min-height: var(--tap);
+
+.label-row {
   display: flex;
-  align-items: center;
-  font-weight: 700;
-  cursor: pointer;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
 }
-.more[open] {
-  padding-bottom: 0.25rem;
+.btn-none {
+  width: auto;
+  flex: none;
+  min-height: 2.5rem;
+  padding: 0.25rem 1rem;
+  background: #fff;
+  color: var(--navy);
+  border-color: var(--navy);
+}
+
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0.25rem 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--navy);
+  text-decoration: underline;
+  cursor: pointer;
+  min-height: 2.5rem;
+}
+
+.choice-wide {
+  grid-column: 1 / -1;
+}
+
+.times-hint {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .times {
+  background: var(--card);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem 1rem;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;

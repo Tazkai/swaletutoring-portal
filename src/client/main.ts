@@ -11,6 +11,7 @@ import {
   type Delivery,
   type QueueStatus,
 } from './queue';
+import { absenceScreen } from './screens/absence';
 import { homeScreen } from './screens/home';
 import { recordScreen } from './screens/record';
 import {
@@ -18,6 +19,7 @@ import {
   listSessions,
   localDate,
   markConfirmed,
+  recordAbsence,
   reconcile,
   saveDraft,
   startSession,
@@ -54,9 +56,17 @@ const screenSlot = h('div', { class: 'screen-slot' });
 const callSlot = h('div', { class: 'call-slot' });
 root.replaceChildren(topBar(), statusSlot, screenSlot, callSlot);
 
-const route = (): { name: 'home' } | { name: 'record'; uuid: string } => {
-  const m = location.hash.match(/^#\/record\/([0-9a-f-]{36})$/);
-  return m?.[1] ? { name: 'record', uuid: m[1] } : { name: 'home' };
+type Route =
+  | { name: 'home' }
+  | { name: 'record'; uuid: string }
+  | { name: 'absence'; pupilId: number; uuid: string | undefined };
+
+const route = (): Route => {
+  const record = location.hash.match(/^#\/record\/([0-9a-f-]{36})$/);
+  if (record?.[1]) return { name: 'record', uuid: record[1] };
+  const absence = location.hash.match(/^#\/absent\/(\d+)(?:\/([0-9a-f-]{36}))?$/);
+  if (absence?.[1]) return { name: 'absence', pupilId: Number(absence[1]), uuid: absence[2] };
+  return { name: 'home' };
 };
 
 function topBar(): HTMLElement {
@@ -153,6 +163,41 @@ async function renderScreen(): Promise<void> {
   }
 
   const r = route();
+  if (r.name === 'absence') {
+    const pupil = state.pupils.find((p) => p.id === r.pupilId);
+    const open = r.uuid
+      ? state.sessions.find((s) => s.client_uuid === r.uuid && s.stage === 'open')
+      : undefined;
+    if (!pupil || (r.uuid && !open)) {
+      location.hash = '';
+      return;
+    }
+    screenSlot.replaceChildren(
+      absenceScreen({
+        pupilName: `${pupil.first_name} ${pupil.last_name}`,
+        fromOpenSession: !!open,
+        dslPhone: state.me.dsl_phone,
+        submit: async (details) => {
+          const uuid = await recordAbsence(
+            { id: pupil.id, name: `${pupil.first_name} ${pupil.last_name}` },
+            details,
+            open?.client_uuid,
+          );
+          await Promise.race([flush(), new Promise((resolve) => setTimeout(resolve, 10_000))]);
+          await refreshSessions();
+          return deliveryOf(uuid);
+        },
+        cancel: () => {
+          location.hash = '';
+        },
+        done: () => {
+          location.hash = '';
+        },
+      }),
+    );
+    return;
+  }
+
   if (r.name === 'record') {
     const session = state.sessions.find((s) => s.client_uuid === r.uuid);
     if (!session) {
@@ -200,6 +245,9 @@ async function renderScreen(): Promise<void> {
       openRecord: (uuid) => {
         location.hash = `#/record/${uuid}`;
       },
+      openAbsence: (pupilId, uuid) => {
+        location.hash = uuid ? `#/absent/${pupilId}/${uuid}` : `#/absent/${pupilId}`;
+      },
     }),
   );
 }
@@ -241,7 +289,7 @@ onQueueStatus((q) => {
 });
 
 onSent(async (item) => {
-  if (item.kind === 'record') await markConfirmed(item.client_uuid);
+  if (item.kind === 'record' || item.kind === 'absence') await markConfirmed(item.client_uuid);
   await refreshSessions();
   // Don't redraw the record form under someone's thumbs; the home screen is safe to refresh.
   if (route().name === 'home') void renderScreen();

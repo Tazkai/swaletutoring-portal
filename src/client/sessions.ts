@@ -1,4 +1,11 @@
-import type { LessonRecordBody, PupilSummary, SessionView, Venue } from '../shared/types';
+import type {
+  LessonRecordBody,
+  NonAttendanceBody,
+  NonAttendanceStatus,
+  PupilSummary,
+  SessionView,
+  Venue,
+} from '../shared/types';
 import { enqueue } from './queue';
 import { get, getAll, put, remove } from './store';
 
@@ -18,6 +25,9 @@ export interface LocalSession {
   draft: Partial<LessonRecordBody>;
   submitted_at: string | null;
   confirmed: boolean; // the server has confirmed the final record
+  // Set when the pupil didn't attend. started_at then only orders the list.
+  absence?: NonAttendanceStatus;
+  session_date?: string;
 }
 
 export async function listSessions(): Promise<LocalSession[]> {
@@ -92,6 +102,39 @@ export async function submitRecord(clientUuid: string, body: LessonRecordBody): 
     url: `/api/sessions/${s.client_uuid}/record`,
     body,
   });
+}
+
+// Ill, cancelled or no-show. With an open session's uuid, that session becomes the
+// non-attendance instead of a new entry being made.
+export async function recordAbsence(
+  pupil: { id: number; name: string },
+  details: Omit<NonAttendanceBody, 'client_uuid' | 'pupil_id'>,
+  openSessionUuid?: string,
+): Promise<string> {
+  const existing = openSessionUuid ? await current(openSessionUuid) : undefined;
+  const clientUuid = existing?.client_uuid ?? crypto.randomUUID();
+  const now = new Date().toISOString();
+  await put('sessions', {
+    client_uuid: clientUuid,
+    pupil_id: pupil.id,
+    pupil_name: pupil.name,
+    venue: existing?.venue ?? 'home',
+    started_at: existing?.started_at ?? now,
+    ended_at: null,
+    stage: 'submitted',
+    draft: {},
+    submitted_at: now,
+    confirmed: false,
+    absence: details.attendance_status,
+    session_date: details.session_date,
+  } satisfies LocalSession);
+  await enqueue({
+    client_uuid: clientUuid,
+    kind: 'absence',
+    url: '/api/sessions/non-attendance',
+    body: { client_uuid: clientUuid, pupil_id: pupil.id, ...details } satisfies NonAttendanceBody,
+  });
+  return clientUuid;
 }
 
 export async function markConfirmed(clientUuid: string): Promise<void> {

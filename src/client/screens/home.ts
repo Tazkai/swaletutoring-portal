@@ -1,4 +1,10 @@
-import { VENUE_LABELS, VENUES, type PupilSummary, type Venue } from '../../shared/types';
+import {
+  NON_ATTENDANCE_LABELS,
+  VENUE_LABELS,
+  VENUES,
+  type PupilSummary,
+  type Venue,
+} from '../../shared/types';
 import type { Delivery } from '../queue';
 import { clockTime, localDate, type LocalSession } from '../sessions';
 import { h } from '../ui';
@@ -11,6 +17,7 @@ export interface HomeContext {
   startSession: (pupil: PupilSummary, venue: Venue) => Promise<void>;
   endSession: (session: LocalSession) => Promise<void>;
   openRecord: (clientUuid: string) => void;
+  openAbsence: (pupilId: number, openSessionUuid?: string) => void;
 }
 
 // Which pupil card has its "start" panel open. Survives re-renders.
@@ -72,9 +79,14 @@ export function homeScreen(ctx: HomeContext): HTMLElement {
                 'span',
                 {},
                 h('strong', {}, s.pupil_name),
-                ` ${clockTime(s.started_at)}–${clockTime(s.ended_at)}`,
-                localDate(s.started_at) !== today &&
-                  ` (${new Date(s.started_at).toLocaleDateString('en-GB')})`,
+                s.absence
+                  ? ` ${NON_ATTENDANCE_LABELS[s.absence]}`
+                  : ` ${clockTime(s.started_at)}–${clockTime(s.ended_at)}`,
+                s.absence && s.session_date && s.session_date !== today
+                  ? ` (${new Date(`${s.session_date}T12:00`).toLocaleDateString('en-GB')})`
+                  : !s.absence &&
+                      localDate(s.started_at) !== today &&
+                      ` (${new Date(s.started_at).toLocaleDateString('en-GB')})`,
               ),
               deliveryChip(ctx.delivery.get(s.client_uuid)),
             ),
@@ -100,18 +112,29 @@ function activeCard(s: LocalSession, ctx: HomeContext): HTMLElement {
       delivery !== 'sent' && deliveryChip(delivery),
     ),
     s.stage === 'open'
-      ? h(
-          'button',
-          {
-            class: 'btn btn-primary',
-            type: 'button',
-            onclick: async (e: Event) => {
-              (e.currentTarget as HTMLButtonElement).disabled = true;
-              await ctx.endSession(s);
+      ? [
+          h(
+            'button',
+            {
+              class: 'btn btn-primary',
+              type: 'button',
+              onclick: async (e: Event) => {
+                (e.currentTarget as HTMLButtonElement).disabled = true;
+                await ctx.endSession(s);
+              },
             },
-          },
-          'End session',
-        )
+            'End session',
+          ),
+          h(
+            'button',
+            {
+              class: 'btn btn-quiet',
+              type: 'button',
+              onclick: () => ctx.openAbsence(s.pupil_id, s.client_uuid),
+            },
+            "Pupil didn't attend",
+          ),
+        ]
       : h(
           'button',
           { class: 'btn btn-primary', type: 'button', onclick: () => ctx.openRecord(s.client_uuid) },
@@ -139,6 +162,11 @@ function pupilCard(p: PupilSummary, ctx: HomeContext): HTMLElement {
           },
         },
         'Start session',
+      ),
+      h(
+        'button',
+        { class: 'btn btn-quiet', type: 'button', onclick: () => ctx.openAbsence(p.id) },
+        "Didn't attend / cancelled",
       ),
     );
   }

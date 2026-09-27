@@ -56,7 +56,8 @@ export function pupilRoutes(app: FastifyInstance, db: DB): void {
       return db
         .prepare(
           `SELECT s.client_uuid, s.session_date, s.started_at, s.ended_at, s.venue,
-                  s.attendance_status, s.submitted_at, u.display_name AS tutor_name,
+                  s.attendance_status, s.reported_by, s.non_attendance_note,
+                  s.submitted_at, u.display_name AS tutor_name,
                   lr.lesson_summary, lr.engagement, lr.needs_followup
            FROM sessions s
            JOIN users u ON u.id = s.tutor_id

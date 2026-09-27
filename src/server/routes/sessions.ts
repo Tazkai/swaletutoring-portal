@@ -1,9 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import {
   ATTENDED_STATUSES,
+  NON_ATTENDANCE_STATUSES,
+  REPORTED_STATUSES,
   VENUES,
   type EndSessionBody,
   type LessonRecordBody,
+  type NonAttendanceBody,
   type SessionView,
   type StartSessionBody,
 } from '../../shared/types.js';
@@ -18,6 +21,8 @@ import type { DB } from '../db.js';
 const uuid = { type: 'string', format: 'uuid' } as const;
 const timestamp = { type: 'string', format: 'date-time' } as const;
 const text = (max: number) => ({ type: 'string', maxLength: max }) as const;
+// Required free text: must contain something other than spaces.
+const filled = { type: 'string', minLength: 1, maxLength: 4000, pattern: '\\S' } as const;
 
 const uuidParams = {
   type: 'object',
@@ -54,22 +59,42 @@ const recordSchema = {
   body: {
     type: 'object',
     additionalProperties: false,
-    required: ['lesson_summary', 'planned_lesson', 'engagement'],
+    required: ['lesson_summary', 'planned_lesson', 'engagement', 'next_lesson', 'problems', 'issues'],
     properties: {
       started_at: timestamp,
       ended_at: timestamp,
       attendance_status: { type: 'string', enum: ATTENDED_STATUSES },
-      lesson_summary: { type: 'string', minLength: 1, maxLength: 4000 },
+      lesson_summary: filled,
       planned_lesson: { type: 'boolean' },
       substitution_reason: text(4000),
-      next_lesson: text(4000),
-      problems: text(4000),
+      next_lesson: filled,
+      problems: filled,
       engagement: { type: 'integer', enum: [1, 2, 3] },
-      issues: text(4000),
+      issues: filled,
       needs_followup: { type: 'boolean' },
     },
   },
 } as const;
+
+const nonAttendanceSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['client_uuid', 'pupil_id', 'session_date', 'attendance_status'],
+    properties: {
+      client_uuid: uuid,
+      pupil_id: { type: 'integer', minimum: 1 },
+      session_date: { type: 'string', format: 'date' },
+      attendance_status: { type: 'string', enum: NON_ATTENDANCE_STATUSES },
+      reported_by: text(200),
+      reported_at: timestamp,
+      note: text(4000),
+    },
+  },
+} as const;
+
+// Cancellations can be logged ahead of time; anything far outside this window is a mistake.
+const SESSION_DATE_WINDOW_DAYS = 90;
 
 // A phone clock a little fast is fine; a timestamp hours ahead is a bug.
 const FUTURE_TOLERANCE_MS = 10 * 60 * 1000;
@@ -90,13 +115,30 @@ interface SessionRow {
   started_at: string | null;
   ended_at: string | null;
   submitted_at: string | null;
+  attendance_status: string;
+}
+
+const NON_ATTENDANCE = new Set<string>(NON_ATTENDANCE_STATUSES);
+
+function assertAttended(row: SessionRow): void {
+  if (NON_ATTENDANCE.has(row.attendance_status)) {
+    throw new HttpError(409, 'this session is recorded as not attended');
+  }
+}
+
+function assertSessionDateInWindow(date: string): void {
+  const days = (Date.parse(`${date}T12:00:00Z`) - Date.now()) / 86_400_000;
+  if (Number.isNaN(days) || Math.abs(days) > SESSION_DATE_WINDOW_DAYS) {
+    throw new HttpError(400, 'session_date is too far from today');
+  }
 }
 
 export function sessionRoutes(app: FastifyInstance, db: DB): void {
   const byUuid = db.prepare(
-    `SELECT id, client_uuid, pupil_id, tutor_id, started_at, ended_at, submitted_at
+    `SELECT id, client_uuid, pupil_id, tutor_id, started_at, ended_at, submitted_at, attendance_status
      FROM sessions WHERE client_uuid = ?`,
   );
+  const hasLessonRecord = db.prepare('SELECT 1 FROM lesson_records WHERE session_id = ?').pluck();
   const viewByUuid = db.prepare(
     `SELECT s.client_uuid, s.pupil_id, p.first_name || ' ' || p.last_name AS pupil_name,
             s.session_date, s.started_at, s.ended_at, s.venue, s.attendance_status, s.submitted_at
@@ -177,6 +219,7 @@ export function sessionRoutes(app: FastifyInstance, db: DB): void {
 
       return db.transaction(() => {
         const row = ownSession(me, request.params.uuid);
+        assertAttended(row);
         if (row.started_at && Date.parse(ended_at) < Date.parse(row.started_at)) {
           throw new HttpError(400, 'ended_at is before started_at');
         }
@@ -202,12 +245,23 @@ export function sessionRoutes(app: FastifyInstance, db: DB): void {
 
       return db.transaction(() => {
         const row = ownSession(me, request.params.uuid);
+        assertAttended(row);
         const startedAt = b.started_at ?? row.started_at;
         const endedAt = b.ended_at ?? row.ended_at;
         if (!startedAt || !endedAt) throw new HttpError(400, 'session needs a start and end time');
         if (Date.parse(endedAt) < Date.parse(startedAt)) {
           throw new HttpError(400, 'ended_at is before started_at');
         }
+        // The app captures times when Start/End are tapped. A tutor can correct them, and
+        // every correction keeps the original in the audit log.
+        const differs = (a: string | null, b2: string) => !!a && Date.parse(a) !== Date.parse(b2);
+        const timesCorrected =
+          differs(row.started_at, startedAt) || differs(row.ended_at, endedAt)
+            ? {
+                started_at: { from: row.started_at, to: startedAt },
+                ended_at: { from: row.ended_at, to: endedAt },
+              }
+            : undefined;
 
         db.prepare(
           `UPDATE sessions SET
@@ -256,9 +310,84 @@ export function sessionRoutes(app: FastifyInstance, db: DB): void {
           row.submitted_at ? 'lesson_record.update' : 'lesson_record.submit',
           'sessions',
           row.id,
-          { engagement: b.engagement, needs_followup: !!b.needs_followup },
+          {
+            engagement: b.engagement,
+            needs_followup: !!b.needs_followup,
+            ...(timesCorrected ? { times_corrected: timesCorrected } : {}),
+          },
         );
         return view(row.client_uuid);
+      })();
+    },
+  );
+
+  // Ill, cancelled or a no-show. Either a fresh entry from the pupil card, or an open
+  // session turned into a non-attendance (the tutor tapped Start, then it fell through).
+  app.post<{ Body: NonAttendanceBody }>(
+    '/api/sessions/non-attendance',
+    { schema: nonAttendanceSchema },
+    async (request) => {
+      const me = request.user;
+      const b = request.body;
+      const reportedBy = blankToNull(b.reported_by);
+      if (REPORTED_STATUSES.includes(b.attendance_status) && !reportedBy) {
+        throw new HttpError(400, 'say who reported it');
+      }
+      if (b.reported_at) notInFuture(b.reported_at, 'reported_at');
+      assertSessionDateInWindow(b.session_date);
+
+      return db.transaction(() => {
+        const existing = byUuid.get(b.client_uuid) as SessionRow | undefined;
+        if (existing && (existing.tutor_id !== me.id || existing.pupil_id !== b.pupil_id)) {
+          throw new HttpError(409, 'session id already used');
+        }
+        if (existing && hasLessonRecord.get(existing.id)) {
+          throw new HttpError(409, 'this session already has a lesson record');
+        }
+        assertPupilVisible(db, me, b.pupil_id);
+
+        db.prepare(
+          `INSERT INTO sessions
+             (client_uuid, pupil_id, tutor_id, session_date, attendance_status,
+              non_attendance_note, reported_by, reported_at, submitted_at)
+           VALUES (@uuid, @pupil, @me, @date, @status, @note, @by, @at, @now)
+           ON CONFLICT(client_uuid) DO UPDATE SET
+             session_date = excluded.session_date,
+             started_at = NULL,
+             ended_at = NULL,
+             attendance_status = excluded.attendance_status,
+             non_attendance_note = excluded.non_attendance_note,
+             reported_by = excluded.reported_by,
+             reported_at = excluded.reported_at,
+             submitted_at = COALESCE(sessions.submitted_at, excluded.submitted_at)`,
+        ).run({
+          uuid: b.client_uuid,
+          pupil: b.pupil_id,
+          me: me.id,
+          date: b.session_date,
+          status: b.attendance_status,
+          note: blankToNull(b.note),
+          by: reportedBy,
+          at: b.reported_at ?? null,
+          now: new Date().toISOString(),
+        });
+
+        const row = byUuid.get(b.client_uuid) as SessionRow;
+        audit(
+          db,
+          me.id,
+          existing && NON_ATTENDANCE.has(existing.attendance_status)
+            ? 'session.non_attendance.update'
+            : 'session.non_attendance',
+          'sessions',
+          row.id,
+          {
+            attendance_status: b.attendance_status,
+            session_date: b.session_date,
+            ...(existing?.started_at ? { replaced_started_session: existing.started_at } : {}),
+          },
+        );
+        return view(b.client_uuid);
       })();
     },
   );

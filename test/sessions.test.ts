@@ -33,6 +33,20 @@ describe('sessions, pupils and access rules', () => {
       lesson_summary: 'Fractions: equivalent fractions with pizza diagrams.',
       planned_lesson: true,
       engagement: 2,
+      next_lesson: 'Yes, carries on to adding fractions.',
+      problems: 'None',
+      issues: 'None',
+      ...extra,
+    });
+
+  const absent = (email: string, pupil: number, extra: object = {}, uuid = randomUUID()) =>
+    call(email, 'POST', '/api/sessions/non-attendance', {
+      client_uuid: uuid,
+      pupil_id: pupil,
+      session_date: new Date().toISOString().slice(0, 10),
+      attendance_status: 'sick_called_in',
+      reported_by: 'Mum, by phone',
+      reported_at: isoMinutesAgo(30),
       ...extra,
     });
 
@@ -263,7 +277,164 @@ describe('sessions, pupils and access rules', () => {
       lesson_summary: 'x',
       planned_lesson: true,
       engagement: 1,
+      next_lesson: 'x',
+      problems: 'None',
+      issues: 'None',
     });
     assert.equal(res.statusCode, 400);
+    assert.match(res.json().error, /start and end/);
+  });
+
+  // ---- the lesson record's detail fields are required ----
+  describe('next lesson, problems and issues are required', () => {
+    for (const field of ['next_lesson', 'problems', 'issues']) {
+      test(`missing ${field} is rejected`, async () => {
+        const uuid = randomUUID();
+        await start(A, h.pupils.a1, uuid);
+        const res = await call(A, 'POST', `/api/sessions/${uuid}/record`, {
+          ended_at: isoMinutesAgo(1),
+          lesson_summary: 'x',
+          planned_lesson: true,
+          engagement: 2,
+          next_lesson: 'x',
+          problems: 'None',
+          issues: 'None',
+          [field]: undefined,
+        });
+        assert.equal(res.statusCode, 400);
+      });
+      test(`${field} of only spaces is rejected`, async () => {
+        const uuid = randomUUID();
+        await start(A, h.pupils.a1, uuid);
+        assert.equal((await record(A, uuid, { [field]: '   ' })).statusCode, 400);
+      });
+    }
+  });
+
+  // ---- time corrections ----
+  test('a corrected session time is audited with the original', async () => {
+    const uuid = randomUUID();
+    await start(A, h.pupils.a1, uuid, 90);
+    await call(A, 'POST', `/api/sessions/${uuid}/end`, { ended_at: isoMinutesAgo(5) });
+    const original = h.db.prepare('SELECT ended_at FROM sessions WHERE client_uuid = ?').pluck().get(uuid);
+    const corrected = isoMinutesAgo(30);
+    assert.equal((await record(A, uuid, { ended_at: corrected })).statusCode, 200);
+
+    const detail = JSON.parse(
+      h.db
+        .prepare(
+          "SELECT detail FROM audit_log WHERE action = 'lesson_record.submit' ORDER BY id DESC LIMIT 1",
+        )
+        .pluck()
+        .get() as string,
+    );
+    assert.equal(detail.times_corrected.ended_at.from, original);
+    assert.equal(detail.times_corrected.ended_at.to, corrected);
+  });
+
+  test('an uncorrected record has no times_corrected entry', async () => {
+    const uuid = randomUUID();
+    await start(A, h.pupils.a1, uuid);
+    await call(A, 'POST', `/api/sessions/${uuid}/end`, { ended_at: isoMinutesAgo(1) });
+    const row = h.db.prepare('SELECT started_at, ended_at FROM sessions WHERE client_uuid = ?').get(uuid) as {
+      started_at: string;
+      ended_at: string;
+    };
+    await record(A, uuid, { started_at: row.started_at, ended_at: row.ended_at });
+    const detail = h.db
+      .prepare("SELECT detail FROM audit_log WHERE action = 'lesson_record.submit' ORDER BY id DESC LIMIT 1")
+      .pluck()
+      .get() as string;
+    assert.ok(!detail.includes('times_corrected'));
+  });
+
+  // ---- non-attendance ----
+  describe('non-attendance (ill, cancelled, no-show)', () => {
+    test('records an illness with who reported it, as one row even when replayed', async () => {
+      const uuid = randomUUID();
+      for (let i = 0; i < 2; i++) assert.equal((await absent(A, h.pupils.a1, {}, uuid)).statusCode, 200);
+      const row = h.db
+        .prepare(
+          'SELECT attendance_status, reported_by, started_at, submitted_at FROM sessions WHERE client_uuid = ?',
+        )
+        .get(uuid) as Record<string, unknown>;
+      assert.equal(row.attendance_status, 'sick_called_in');
+      assert.equal(row.reported_by, 'Mum, by phone');
+      assert.equal(row.started_at, null);
+      assert.ok(row.submitted_at);
+      assert.equal(count('SELECT COUNT(*) FROM sessions WHERE client_uuid = ?', uuid), 1);
+    });
+
+    for (const status of ['sick_called_in', 'cancelled_family', 'cancelled_school']) {
+      test(`${status} needs to say who reported it`, async () => {
+        assert.equal((await absent(A, h.pupils.a1, { attendance_status: status, reported_by: ' ' })).statusCode, 400);
+      });
+    }
+
+    for (const status of ['cancelled_us', 'no_show']) {
+      test(`${status} does not need a reporter`, async () => {
+        const res = await absent(A, h.pupils.a1, { attendance_status: status, reported_by: undefined });
+        assert.equal(res.statusCode, 200);
+      });
+    }
+
+    test('an attended status is not accepted as a non-attendance', async () => {
+      assert.equal((await absent(A, h.pupils.a1, { attendance_status: 'present' })).statusCode, 400);
+    });
+
+    test('a cancellation can be logged ahead, but not months away', async () => {
+      const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 10);
+      assert.equal((await absent(A, h.pupils.a1, { session_date: inDays(7) })).statusCode, 200);
+      assert.equal((await absent(A, h.pupils.a1, { session_date: inDays(200) })).statusCode, 400);
+      assert.equal((await absent(A, h.pupils.a1, { session_date: 'next tuesday' })).statusCode, 400);
+    });
+
+    test('an open session can be turned into a non-attendance', async () => {
+      const uuid = randomUUID();
+      await start(A, h.pupils.a2, uuid, 5);
+      const res = await absent(A, h.pupils.a2, { attendance_status: 'no_show', reported_by: undefined }, uuid);
+      assert.equal(res.statusCode, 200);
+      const row = h.db
+        .prepare('SELECT attendance_status, started_at FROM sessions WHERE client_uuid = ?')
+        .get(uuid) as { attendance_status: string; started_at: string | null };
+      assert.equal(row.attendance_status, 'no_show');
+      assert.equal(row.started_at, null);
+      // It no longer shows as open, and it can't then be ended or given a lesson record.
+      const open = (await call(A, 'GET', '/api/sessions/open')).json();
+      assert.ok(!open.some((s: { client_uuid: string }) => s.client_uuid === uuid));
+      assert.equal(
+        (await call(A, 'POST', `/api/sessions/${uuid}/end`, { ended_at: isoMinutesAgo(0) })).statusCode,
+        409,
+      );
+      assert.equal((await record(A, uuid, { started_at: isoMinutesAgo(5) })).statusCode, 409);
+      const audited = h.db
+        .prepare("SELECT detail FROM audit_log WHERE action = 'session.non_attendance' ORDER BY id DESC LIMIT 1")
+        .pluck()
+        .get() as string;
+      assert.ok(audited.includes('replaced_started_session'));
+    });
+
+    test('a session with a lesson record cannot be turned into a non-attendance', async () => {
+      const uuid = randomUUID();
+      await start(A, h.pupils.a1, uuid);
+      await record(A, uuid);
+      assert.equal((await absent(A, h.pupils.a1, {}, uuid)).statusCode, 409);
+    });
+
+    test('Tutor A cannot record a non-attendance for Tutor B’s pupil', async () => {
+      const before = count('SELECT COUNT(*) FROM sessions WHERE pupil_id = ?', h.pupils.b1);
+      assert.equal((await absent(A, h.pupils.b1)).statusCode, 404);
+      assert.equal(count('SELECT COUNT(*) FROM sessions WHERE pupil_id = ?', h.pupils.b1), before);
+    });
+
+    test('non-attendance is audited', async () => {
+      const uuid = randomUUID();
+      await absent(A, h.pupils.a1, { attendance_status: 'cancelled_school', reported_by: 'School office' }, uuid);
+      const id = count('SELECT id FROM sessions WHERE client_uuid = ?', uuid);
+      assert.equal(
+        count("SELECT COUNT(*) FROM audit_log WHERE entity_id = ? AND action = 'session.non_attendance'", id),
+        1,
+      );
+    });
   });
 });

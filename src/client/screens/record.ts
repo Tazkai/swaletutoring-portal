@@ -60,6 +60,57 @@ export function recordScreen(ctx: RecordContext): HTMLElement {
 
   const errors = h('div', { class: 'errors', role: 'alert', 'aria-live': 'assertive' });
 
+  // A required field with a one-tap "None", so "nothing to report" doesn't need typing.
+  const withNone = (name: 'problems' | 'issues', label: string, extra?: HTMLElement) => {
+    const area = textarea(name, 2);
+    return h(
+      'div',
+      { class: 'field' },
+      h(
+        'div',
+        { class: 'label-row' },
+        h('label', { for: name }, label),
+        h(
+          'button',
+          {
+            class: 'btn btn-none',
+            type: 'button',
+            onclick: () => {
+              area.value = 'None';
+              area.dispatchEvent(new Event('input', { bubbles: true }));
+            },
+          },
+          'None',
+        ),
+      ),
+      area,
+      extra,
+    );
+  };
+
+  // Times are captured by the Start and End taps. This is only for fixing a late tap,
+  // so it stays hidden unless asked for (or a correction is already in the draft).
+  const timesCorrected =
+    (!!d.started_at && d.started_at !== s.started_at) || (!!d.ended_at && d.ended_at !== s.ended_at);
+  const times = h(
+    'fieldset',
+    { class: 'times', hidden: !timesCorrected },
+    h('legend', {}, 'Correct the session times'),
+    h(
+      'label',
+      {},
+      'Start ',
+      h('input', { type: 'time', name: 'start_time', value: timeValue(d.started_at ?? s.started_at) }),
+    ),
+    h(
+      'label',
+      {},
+      'End ',
+      h('input', { type: 'time', name: 'end_time', value: timeValue(d.ended_at ?? s.ended_at) }),
+    ),
+    h('p', { class: 'hint times-hint' }, 'Only if you tapped Start or End late. Changes are logged.'),
+  );
+
   const form = h(
     'form',
     { class: 'record', novalidate: true },
@@ -70,9 +121,23 @@ export function recordScreen(ctx: RecordContext): HTMLElement {
       h(
         'p',
         { class: 'meta' },
-        `${clockTime(s.started_at)}–${clockTime(s.ended_at)} · ${VENUE_LABELS[s.venue]}`,
+        `${clockTime(s.started_at)}–${clockTime(s.ended_at)} · ${VENUE_LABELS[s.venue]} `,
+        h(
+          'button',
+          {
+            class: 'link-button',
+            type: 'button',
+            'aria-expanded': String(timesCorrected),
+            onclick: (e: Event) => {
+              times.hidden = !times.hidden;
+              (e.currentTarget as HTMLElement).setAttribute('aria-expanded', String(!times.hidden));
+            },
+          },
+          'Times wrong?',
+        ),
       ),
     ),
+    times,
 
     ctx.rejection &&
       h(
@@ -128,52 +193,28 @@ export function recordScreen(ctx: RecordContext): HTMLElement {
     substitution,
 
     h(
-      'details',
-      { class: 'more', open: !!(d.next_lesson || d.problems || d.issues) },
-      h('summary', {}, 'More details (optional)'),
+      'div',
+      { class: 'field' },
+      h('label', { for: 'next_lesson' }, 'Next lesson: does it follow on from this one?'),
+      textarea('next_lesson', 2),
+    ),
+    withNone('problems', 'Any problems'),
+    withNone(
+      'issues',
+      'Anything the office needs to deal with, e.g. parent contact',
       h(
-        'div',
-        { class: 'field' },
-        h('label', { for: 'next_lesson' }, 'Next lesson: does it follow on from this one?'),
-        textarea('next_lesson', 2),
+        'label',
+        { class: 'check' },
+        h('input', { type: 'checkbox', name: 'needs_followup', checked: !!d.needs_followup }),
+        ' The office needs to follow this up',
       ),
-      h('div', { class: 'field' }, h('label', { for: 'problems' }, 'Any problems'), textarea('problems', 2)),
-      h(
-        'div',
-        { class: 'field' },
-        h('label', { for: 'issues' }, 'Anything the office needs to deal with, e.g. parent contact'),
-        textarea('issues', 2),
-        h(
-          'label',
-          { class: 'check' },
-          h('input', { type: 'checkbox', name: 'needs_followup', checked: !!d.needs_followup }),
-          ' The office needs to follow this up',
-        ),
-      ),
-      h(
-        'fieldset',
-        { class: 'choices choices-3' },
-        h('legend', {}, 'Attendance'),
-        (Object.keys(ATTENDANCE_LABELS) as AttendedStatus[]).map((k) =>
-          radio('attendance_status', k, ATTENDANCE_LABELS[k], (d.attendance_status ?? 'present') === k),
-        ),
-      ),
-      h(
-        'fieldset',
-        { class: 'times' },
-        h('legend', {}, 'Session times'),
-        h(
-          'label',
-          {},
-          'Start ',
-          h('input', { type: 'time', name: 'start_time', value: timeValue(d.started_at ?? s.started_at) }),
-        ),
-        h(
-          'label',
-          {},
-          'End ',
-          h('input', { type: 'time', name: 'end_time', value: timeValue(d.ended_at ?? s.ended_at) }),
-        ),
+    ),
+    h(
+      'fieldset',
+      { class: 'choices choices-3' },
+      h('legend', {}, 'Attendance'),
+      (Object.keys(ATTENDANCE_LABELS) as AttendedStatus[]).map((k) =>
+        radio('attendance_status', k, ATTENDANCE_LABELS[k], (d.attendance_status ?? 'present') === k),
       ),
     ),
 
@@ -190,7 +231,7 @@ export function recordScreen(ctx: RecordContext): HTMLElement {
     h('button', { class: 'btn btn-primary btn-submit', type: 'submit' }, 'Submit record'),
   );
 
-  const read = (): Partial<LessonRecordBody> & { _start?: string; _end?: string } => {
+  const read = (): Partial<LessonRecordBody> => {
     const f = new FormData(form);
     const str = (k: string) => {
       const v = f.get(k);
@@ -232,6 +273,9 @@ export function recordScreen(ctx: RecordContext): HTMLElement {
     const problems: string[] = [];
     if (!v.lesson_summary?.trim()) problems.push('Add a short lesson summary.');
     if (!v.engagement) problems.push('Choose an engagement score: 1, 2 or 3.');
+    if (!v.next_lesson?.trim()) problems.push('Say whether the next lesson follows on.');
+    if (!v.problems?.trim()) problems.push('Fill in "Any problems" (tap None if there were none).');
+    if (!v.issues?.trim()) problems.push('Fill in "Anything the office needs to deal with" (tap None if nothing).');
     const start = v.started_at ? Date.parse(v.started_at) : NaN;
     const end = v.ended_at ? Date.parse(v.ended_at) : Date.now();
     if (end < start) problems.push('The end time is before the start time.');
@@ -260,9 +304,9 @@ export function recordScreen(ctx: RecordContext): HTMLElement {
       ...(v.planned_lesson === false && v.substitution_reason
         ? { substitution_reason: v.substitution_reason }
         : {}),
-      ...(v.next_lesson ? { next_lesson: v.next_lesson } : {}),
-      ...(v.problems ? { problems: v.problems } : {}),
-      ...(v.issues ? { issues: v.issues } : {}),
+      next_lesson: v.next_lesson!.trim(),
+      problems: v.problems!.trim(),
+      issues: v.issues!.trim(),
     };
     const delivery = await ctx.submit(body);
     form.replaceWith(resultPanel(delivery, ctx));

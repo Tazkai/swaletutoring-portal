@@ -14,9 +14,32 @@ export const VENUE_LABELS: Record<Venue, string> = {
 };
 
 // Statuses a tutor can set on a session the pupil attended.
-// Non-attendance statuses arrive in slice 2.
 export const ATTENDED_STATUSES = ['present', 'late', 'left_early'] as const;
 export type AttendedStatus = (typeof ATTENDED_STATUSES)[number];
+
+export const NON_ATTENDANCE_STATUSES = [
+  'sick_called_in',
+  'cancelled_family',
+  'cancelled_school',
+  'cancelled_us',
+  'no_show',
+] as const;
+export type NonAttendanceStatus = (typeof NON_ATTENDANCE_STATUSES)[number];
+
+export const NON_ATTENDANCE_LABELS: Record<NonAttendanceStatus, string> = {
+  sick_called_in: 'Ill (called in)',
+  cancelled_family: 'Cancelled by family',
+  cancelled_school: 'Cancelled by school',
+  cancelled_us: 'Cancelled by us',
+  no_show: 'No-show',
+};
+
+// Someone told us about these, so we record who.
+export const REPORTED_STATUSES: readonly NonAttendanceStatus[] = [
+  'sick_called_in',
+  'cancelled_family',
+  'cancelled_school',
+];
 
 export const ENGAGEMENT_LABELS: Record<1 | 2 | 3, string> = {
   1: 'Excellent',
@@ -55,11 +78,21 @@ export interface LessonRecordBody {
   lesson_summary: string;
   planned_lesson: boolean;
   substitution_reason?: string;
-  next_lesson?: string;
-  problems?: string;
+  next_lesson: string;
+  problems: string;
   engagement: 1 | 2 | 3;
-  issues?: string;
+  issues: string;
   needs_followup?: boolean;
+}
+
+export interface NonAttendanceBody {
+  client_uuid: string;
+  pupil_id: number;
+  session_date: string; // YYYY-MM-DD
+  attendance_status: NonAttendanceStatus;
+  reported_by?: string;
+  reported_at?: string;
+  note?: string;
 }
 
 export interface SessionView {
