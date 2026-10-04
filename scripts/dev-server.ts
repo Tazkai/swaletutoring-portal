@@ -19,8 +19,10 @@ import { migrate, openDb } from '../src/server/db.js';
 
 const TEAM = 'dev.invalid';
 const AUD = 'dev-aud';
+const OFFICE_AUD = 'dev-office-aud';
 const APP_PORT = 3198;
-const PROXY_PORT = 3199;
+const PROXY_PORT = 3199; // the tutor app, as if through the portal Access app
+const OFFICE_PROXY_PORT = 3299; // the office, as if through the office Access app (signs in as the DSL)
 
 const dbPath = process.env.DEV_DB_PATH ?? path.join(os.homedir(), 'dev-data/dev.db');
 if (dbPath.startsWith('/srv/portal/data')) throw new Error('Refusing to use the live data directory');
@@ -51,50 +53,63 @@ if (!db.prepare('SELECT COUNT(*) FROM users').pluck().get()) {
 const { publicKey, privateKey } = await generateKeyPair('RS256', { extractable: true });
 const jwk = { ...(await exportJWK(publicKey)), kid: 'dev', alg: 'RS256' };
 
+const filesDir = path.join(path.dirname(dbPath), 'files');
 const app = await buildApp({
   db,
   accessTeamDomain: TEAM,
   accessAud: AUD,
+  officeAccessAud: OFFICE_AUD,
   dslPhone: '01795 608506',
+  filesDir,
   clientDir: path.join(APP_ROOT, 'dist/client'),
   accessKeys: createLocalJWKSet({ keys: [jwk] }),
   logger: false,
 });
 await app.listen({ host: '127.0.0.1', port: APP_PORT });
 
-const sign = (email: string) =>
+const sign = (email: string, aud: string) =>
   new SignJWT({ email })
     .setProtectedHeader({ alg: 'RS256', kid: 'dev' })
     .setIssuer(`https://${TEAM}`)
-    .setAudience(AUD)
+    .setAudience(aud)
     .setIssuedAt()
     .setExpirationTime('5m')
     .sign(privateKey);
 
-http
-  .createServer(async (req, res) => {
-    const switchTo = req.url?.match(/^\/__as\/([^/?#]+)/)?.[1];
-    if (switchTo) {
-      res.writeHead(302, { 'set-cookie': `dev_as=${switchTo}; Path=/; SameSite=Strict`, location: '/' });
-      return res.end();
-    }
-    const email = decodeURIComponent(
-      req.headers.cookie?.match(/(?:^|;\s*)dev_as=([^;]+)/)?.[1] ?? 'tutor-a%40example.test',
-    );
-    const headers = { ...req.headers, 'cf-access-jwt-assertion': await sign(email) };
-    const upstream = http.request(
-      { host: '127.0.0.1', port: APP_PORT, path: req.url, method: req.method, headers },
-      (up) => {
-        res.writeHead(up.statusCode ?? 502, up.headers);
-        up.pipe(res);
-      },
-    );
-    upstream.on('error', () => {
-      res.writeHead(502);
-      res.end();
-    });
-    req.pipe(upstream);
-  })
-  .listen(PROXY_PORT, '127.0.0.1', () => {
-    console.log(`Dev portal on http://127.0.0.1:${PROXY_PORT} (db ${dbPath})`);
-  });
+// A stand-in for one Cloudflare Access application: signs a token for that app's AUD and,
+// for the office, presents the office hostname so the office front end is served.
+function accessProxy(port: number, aud: string, hostHeader: string | undefined, defaultEmail: string) {
+  http
+    .createServer(async (req, res) => {
+      const switchTo = req.url?.match(/^\/__as\/([^/?#]+)/)?.[1];
+      if (switchTo) {
+        res.writeHead(302, { 'set-cookie': `dev_as=${switchTo}; Path=/; SameSite=Strict`, location: '/' });
+        return res.end();
+      }
+      const email = decodeURIComponent(
+        req.headers.cookie?.match(/(?:^|;\s*)dev_as=([^;]+)/)?.[1] ?? encodeURIComponent(defaultEmail),
+      );
+      const headers = {
+        ...req.headers,
+        ...(hostHeader ? { host: hostHeader } : {}),
+        'cf-access-jwt-assertion': await sign(email, aud),
+      };
+      const upstream = http.request(
+        { host: '127.0.0.1', port: APP_PORT, path: req.url, method: req.method, headers },
+        (up) => {
+          res.writeHead(up.statusCode ?? 502, up.headers);
+          up.pipe(res);
+        },
+      );
+      upstream.on('error', () => {
+        res.writeHead(502);
+        res.end();
+      });
+      req.pipe(upstream);
+    })
+    .listen(port, '127.0.0.1');
+}
+
+accessProxy(PROXY_PORT, AUD, undefined, 'tutor-a@example.test');
+accessProxy(OFFICE_PROXY_PORT, OFFICE_AUD, 'office.localhost', 'dsl@example.test');
+console.log(`Dev tutor app on http://127.0.0.1:${PROXY_PORT}, office on http://127.0.0.1:${OFFICE_PROXY_PORT} (db ${dbPath})`);

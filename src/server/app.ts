@@ -4,21 +4,27 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import type { JWTVerifyGetKey } from 'jose';
 import type { Me } from '../shared/types.js';
-import { registerAuth } from './auth.js';
+import { isUnder, registerAuth } from './auth.js';
 import { HttpError } from './access.js';
 import type { DB } from './db.js';
 import { pupilRoutes } from './routes/pupils.js';
+import { officeRoutes } from './routes/office.js';
 import { sessionRoutes } from './routes/sessions.js';
 
 export interface AppOptions {
   db: DB;
   accessTeamDomain: string;
   accessAud: string;
+  officeAccessAud?: string; // unset = the office API refuses every request
   dslPhone: string;
+  filesDir: string;
   clientDir?: string;
   accessKeys?: JWTVerifyGetKey;
   logger?: boolean;
 }
+
+// The office front end is served on office.* hostnames; everything else gets the tutor app.
+const isOfficeHost = (hostname: string) => hostname.toLowerCase().startsWith('office.');
 
 const CSP = [
   "default-src 'self'",
@@ -49,7 +55,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
-    if (request.url.startsWith('/api/')) reply.header('Cache-Control', 'no-store');
+    if (isUnder(request, '/api/')) reply.header('Cache-Control', 'no-store');
   });
 
   app.setErrorHandler((err, request, reply) => {
@@ -68,6 +74,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   registerAuth(app, opts.db, {
     teamDomain: opts.accessTeamDomain,
     audience: opts.accessAud,
+    officeAudience: opts.officeAccessAud,
     keys: opts.accessKeys,
   });
 
@@ -77,26 +84,29 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   }));
   pupilRoutes(app, opts.db);
   sessionRoutes(app, opts.db);
+  await officeRoutes(app, opts.db, opts.filesDir);
 
   app.all('/api/*', async (_request, reply) => reply.code(404).send({ error: 'not found' }));
 
   if (opts.clientDir && fs.existsSync(opts.clientDir)) {
     await app.register(fastifyStatic, {
       root: opts.clientDir,
-      index: 'index.html',
+      index: false,
       setHeaders(res, filePath) {
         const name = path.basename(filePath);
         if (filePath.includes(`${path.sep}assets${path.sep}`)) {
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        } else if (name === 'sw.js' || name === 'index.html') {
+        } else if (name === 'sw.js' || name.endsWith('.html')) {
           res.setHeader('Cache-Control', 'no-cache');
         }
       },
     });
-    // Single-page app: unknown non-API paths get the shell.
+    // Single-page apps: the root and any unknown non-API path get the right shell for the host.
+    const shell = (hostname: string) => (isOfficeHost(hostname) ? 'office.html' : 'index.html');
+    app.get('/', (request, reply) => reply.header('Cache-Control', 'no-cache').sendFile(shell(request.hostname)));
     app.setNotFoundHandler((request, reply) => {
-      if (request.method === 'GET' && !request.url.startsWith('/api/')) {
-        return reply.header('Cache-Control', 'no-cache').sendFile('index.html');
+      if (request.method === 'GET' && !isUnder(request, '/api/')) {
+        return reply.header('Cache-Control', 'no-cache').sendFile(shell(request.hostname));
       }
       return reply.code(404).send({ error: 'not found' });
     });

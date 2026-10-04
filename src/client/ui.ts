@@ -1,7 +1,7 @@
 // Tiny DOM helper. Text always goes in as text nodes, never as HTML,
 // so names and lesson notes can't inject markup.
 
-type Child = Node | string | number | null | undefined | false | Child[];
+export type Child = Node | string | number | null | undefined | false | Child[];
 type Props = Record<string, string | number | boolean | EventListener | null | undefined>;
 
 export function h<K extends keyof HTMLElementTagNameMap>(

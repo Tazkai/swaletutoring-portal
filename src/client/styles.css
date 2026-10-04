@@ -117,6 +117,61 @@ h3 {
 .card-open {
   border: 2px solid var(--navy);
 }
+.card-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+}
+.card-flags .chip {
+  white-space: normal;
+}
+
+/* ---------- key information ---------- */
+
+.key-info {
+  margin: 0 0 1rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.25rem 1rem;
+}
+.key-info dt {
+  font-weight: 700;
+  margin-top: 0.75rem;
+}
+.key-info dt.priority {
+  color: var(--bad);
+}
+.key-info dd {
+  margin: 0.15rem 0 0.75rem;
+  white-space: pre-wrap;
+}
+.key-info dd + dt {
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+.targets {
+  padding-left: 1.2rem;
+  margin: 0 0 1rem;
+}
+.targets li {
+  margin-bottom: 0.5rem;
+}
+.confirm-area {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0 0.75rem;
+}
+.confirm-area .chip {
+  justify-self: start;
+  font-size: 1rem;
+  padding: 0.3rem 0.8rem;
+}
+.screen h3 {
+  margin-top: 1rem;
+}
+
 .card-done {
   background: #fafbfd;
 }

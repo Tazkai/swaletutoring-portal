@@ -12,6 +12,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: 'src/client/index.html',
+        office: 'src/client/office.html',
         sw: 'src/client/sw.ts',
       },
       output: {

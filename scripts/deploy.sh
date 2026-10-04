@@ -17,6 +17,12 @@ git merge -q --ff-only origin/main
 npm ci --no-audit --no-fund --silent
 npm test --silent >/dev/null || { echo "deploy: tests failed; live service untouched." >&2; exit 1; }
 npm run -s build >/dev/null
+# A consistent snapshot just before the restart, which is when migrations run. Named
+# portal-* so the backup script's 14-day clean-up covers it.
+DB=$(grep -E '^DB_PATH=' .env | cut -d= -f2-)
+SNAP="/srv/portal/backup/portal-predeploy-$(date +%Y%m%d-%H%M%S).db"
+sqlite3 "${DB:-/srv/portal/data/portal.db}" ".backup '$SNAP'" && chmod 640 "$SNAP"
+echo "Snapshot: $SNAP"
 # The one root command the portal user is allowed (see /etc/sudoers.d/portal-restart).
 sudo -n /usr/bin/systemctl restart portal.service
 

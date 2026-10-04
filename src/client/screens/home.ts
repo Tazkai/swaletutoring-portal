@@ -5,6 +5,7 @@ import {
   type PupilSummary,
   type Venue,
 } from '../../shared/types';
+import { needsReading } from '../keyinfo';
 import type { Delivery } from '../queue';
 import { clockTime, localDate, type LocalSession } from '../sessions';
 import { h } from '../ui';
@@ -18,6 +19,8 @@ export interface HomeContext {
   endSession: (session: LocalSession) => Promise<void>;
   openRecord: (clientUuid: string) => void;
   openAbsence: (pupilId: number, openSessionUuid?: string) => void;
+  openKeyInfo: (pupilId: number, thenStart?: boolean) => void;
+  keyInfoConfirmed: Map<number, number>; // versions confirmed on this phone (maybe not yet sent)
   refresh: () => void;
 }
 
@@ -130,6 +133,7 @@ function doneCard(p: PupilSummary, records: LocalSession[], ctx: HomeContext): H
     'article',
     { class: 'card card-done' },
     h('h3', {}, `${p.first_name} ${p.last_name} `, h('span', { class: 'chip chip-ok' }, '✓ Done today')),
+    pupilFlags(p, ctx),
     records.length > 0 &&
       h(
         'ul',
@@ -164,10 +168,12 @@ function doneCard(p: PupilSummary, records: LocalSession[], ctx: HomeContext): H
 
 function activeCard(s: LocalSession, ctx: HomeContext): HTMLElement {
   const delivery = ctx.delivery.get(s.client_uuid);
+  const pupil = ctx.pupils.find((p) => p.id === s.pupil_id);
   return h(
     'article',
     { class: 'card card-active' },
     h('h3', {}, s.pupil_name),
+    pupil && pupilFlags(pupil, ctx),
     h(
       'p',
       { class: 'meta' },
@@ -200,6 +206,7 @@ function activeCard(s: LocalSession, ctx: HomeContext): HTMLElement {
             },
             "Pupil didn't attend",
           ),
+          pupil && keyInfoButton(pupil, ctx),
         ]
       : h(
           'button',
@@ -209,31 +216,64 @@ function activeCard(s: LocalSession, ctx: HomeContext): HTMLElement {
   );
 }
 
+// Badges for the key-information state and the first-aider rule, shown on every pupil card.
+function pupilFlags(p: PupilSummary, ctx: HomeContext): HTMLElement | false {
+  const unread = needsReading(p, ctx.keyInfoConfirmed.get(p.id) ?? 0);
+  if (!unread && !p.first_aider_required) return false;
+  return h(
+    'p',
+    { class: 'card-flags' },
+    unread && h('span', { class: 'chip chip-warn' }, 'New key information: read before the session'),
+    p.first_aider_required === 1 && h('span', { class: 'chip chip-bad' }, 'First-aider must be present'),
+  );
+}
+
+function keyInfoButton(p: PupilSummary, ctx: HomeContext): HTMLElement | false {
+  if (!p.key_info_version) return false;
+  return h(
+    'button',
+    { class: 'btn btn-quiet', type: 'button', onclick: () => ctx.openKeyInfo(p.id) },
+    'Key information',
+  );
+}
+
+export function expandPupil(id: number): void {
+  expandedPupil = id;
+}
+
 function pupilCard(p: PupilSummary, ctx: HomeContext): HTMLElement {
   const name = `${p.first_name} ${p.last_name}`;
   if (expandedPupil !== p.id) {
+    const mustRead = needsReading(p, ctx.keyInfoConfirmed.get(p.id) ?? 0);
     return h(
       'article',
       { class: 'card' },
       h('h3', {}, name),
+      pupilFlags(p, ctx),
       h(
         'button',
         {
           class: 'btn btn-primary',
           type: 'button',
           onclick: (e: Event) => {
+            // KCC: the tutor must have read the pupil's key information before working with them.
+            if (mustRead) {
+              ctx.openKeyInfo(p.id, true);
+              return;
+            }
             expandedPupil = p.id;
             const card = (e.currentTarget as HTMLElement).closest('article');
             card?.replaceWith(pupilCard(p, ctx));
           },
         },
-        'Start session',
+        mustRead ? 'Read key information to start' : 'Start session',
       ),
       h(
         'button',
         { class: 'btn btn-quiet', type: 'button', onclick: () => ctx.openAbsence(p.id) },
         "Didn't attend / cancelled",
       ),
+      !mustRead && keyInfoButton(p, ctx),
     );
   }
 

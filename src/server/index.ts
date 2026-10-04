@@ -10,7 +10,9 @@ const app = await buildApp({
   db,
   accessTeamDomain: config.accessTeamDomain,
   accessAud: config.accessAud,
+  officeAccessAud: config.officeAccessAud,
   dslPhone: config.dslPhone,
+  filesDir: config.filesDir,
   clientDir: config.clientDir,
   logger: true,
 });

@@ -11,8 +11,10 @@ import {
   type Delivery,
   type QueueStatus,
 } from './queue';
+import { confirmRead, loadKeyInfo, locallyConfirmed, syncKeyInfoCache } from './keyinfo';
 import { absenceScreen } from './screens/absence';
-import { homeScreen } from './screens/home';
+import { expandPupil, homeScreen } from './screens/home';
+import { keyInfoScreen } from './screens/keyinfo';
 import { recordScreen } from './screens/record';
 import {
   endSession,
@@ -37,6 +39,7 @@ interface State {
   sessions: LocalSession[];
   delivery: Map<string, Delivery>;
   queue: QueueStatus | undefined;
+  keyInfoConfirmed: Map<number, number>;
 }
 
 const state: State = {
@@ -48,6 +51,7 @@ const state: State = {
   sessions: [],
   delivery: new Map(),
   queue: undefined,
+  keyInfoConfirmed: new Map(),
 };
 
 const root = document.getElementById('app') as HTMLElement;
@@ -59,11 +63,14 @@ root.replaceChildren(topBar(), statusSlot, screenSlot, callSlot);
 type Route =
   | { name: 'home' }
   | { name: 'record'; uuid: string }
-  | { name: 'absence'; pupilId: number; uuid: string | undefined };
+  | { name: 'absence'; pupilId: number; uuid: string | undefined }
+  | { name: 'info'; pupilId: number; thenStart: boolean };
 
 const route = (): Route => {
   const record = location.hash.match(/^#\/record\/([0-9a-f-]{36})$/);
   if (record?.[1]) return { name: 'record', uuid: record[1] };
+  const info = location.hash.match(/^#\/info\/(\d+)(\/start)?$/);
+  if (info?.[1]) return { name: 'info', pupilId: Number(info[1]), thenStart: !!info[2] };
   const absence = location.hash.match(/^#\/absent\/(\d+)(?:\/([0-9a-f-]{36}))?$/);
   if (absence?.[1]) return { name: 'absence', pupilId: Number(absence[1]), uuid: absence[2] };
   return { name: 'home' };
@@ -163,6 +170,40 @@ async function renderScreen(): Promise<void> {
   }
 
   const r = route();
+  if (r.name === 'info') {
+    const pupil = state.pupils.find((p) => p.id === r.pupilId);
+    if (!pupil) {
+      location.hash = '';
+      return;
+    }
+    const loaded = await loadKeyInfo(pupil.id);
+    const serverConfirmed = loaded.data?.confirmed_at ? loaded.data.version : 0;
+    const local = state.keyInfoConfirmed.get(pupil.id) ?? 0;
+    screenSlot.replaceChildren(
+      keyInfoScreen({
+        pupilName: `${pupil.first_name} ${pupil.last_name}`,
+        info: loaded.data ?? null,
+        fromCache: !loaded.fresh,
+        confirmedVersion: Math.max(serverConfirmed, local),
+        confirm: async (version) => {
+          await confirmRead(pupil.id, version);
+          state.keyInfoConfirmed.set(pupil.id, Math.max(version, local));
+        },
+        back: () => {
+          location.hash = '';
+        },
+        startAfter: r.thenStart
+          ? () => {
+              expandPupil(pupil.id);
+              location.hash = '';
+            }
+          : undefined,
+      }),
+    );
+    window.scrollTo(0, 0);
+    return;
+  }
+
   if (r.name === 'absence') {
     const pupil = state.pupils.find((p) => p.id === r.pupilId);
     const open = r.uuid
@@ -247,6 +288,10 @@ async function renderScreen(): Promise<void> {
       openAbsence: (pupilId, uuid) => {
         location.hash = uuid ? `#/absent/${pupilId}/${uuid}` : `#/absent/${pupilId}`;
       },
+      openKeyInfo: (pupilId, thenStart) => {
+        location.hash = thenStart ? `#/info/${pupilId}/start` : `#/info/${pupilId}`;
+      },
+      keyInfoConfirmed: state.keyInfoConfirmed,
       refresh: () => void renderScreen(),
     }),
   );
@@ -275,6 +320,9 @@ async function load(): Promise<void> {
 
   await reconcile(open.fresh ? open.data : undefined, localDate(new Date().toISOString()));
   await refreshSessions();
+  for (const p of state.pupils) state.keyInfoConfirmed.set(p.id, await locallyConfirmed(p.id));
+  // Keep key information on the phone for use without signal (in the background).
+  if (pupils.fresh) void syncKeyInfoCache(state.pupils);
   state.loaded = true;
   renderStatus();
   renderCallBar();

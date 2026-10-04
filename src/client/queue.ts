@@ -4,7 +4,7 @@ import { getAll, put, remove } from './store';
 // client_uuid, then sent in order. The server treats a replay as an update, so
 // retrying is always safe. Nothing is ever shown as sent until the server says so.
 
-export type QueueKind = 'start' | 'end' | 'record' | 'absence';
+export type QueueKind = 'start' | 'end' | 'record' | 'absence' | 'confirm';
 
 export interface QueueItem {
   seq?: number;

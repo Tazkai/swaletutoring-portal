@@ -8,7 +8,9 @@ export interface Config {
   clientDir: string;
   accessTeamDomain: string;
   accessAud: string;
+  officeAccessAud: string | undefined;
   dslPhone: string;
+  filesDir: string;
 }
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
@@ -38,6 +40,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     clientDir: env.CLIENT_DIR?.trim() || path.join(APP_ROOT, 'dist/client'),
     accessTeamDomain: teamDomain,
     accessAud: required('ACCESS_AUD'),
+    officeAccessAud: env.OFFICE_ACCESS_AUD?.trim() || undefined,
     dslPhone: required('DSL_PHONE'),
+    filesDir: env.FILES_DIR?.trim() || '/srv/portal/files',
   };
 }
