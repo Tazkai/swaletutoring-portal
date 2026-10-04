@@ -12,8 +12,12 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-git fetch -q origin
-git merge -q --ff-only origin/main
+if [ "${DEPLOY_REEXEC:-}" != 1 ]; then
+  git fetch -q origin
+  git merge -q --ff-only origin/main
+  # Bash reads a script as it runs, so if this file just changed, carry on with the new copy.
+  DEPLOY_REEXEC=1 exec "$0" "$@"
+fi
 npm ci --no-audit --no-fund --silent
 npm test --silent >/dev/null || { echo "deploy: tests failed; live service untouched." >&2; exit 1; }
 npm run -s build >/dev/null
